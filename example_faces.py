@@ -50,7 +50,8 @@ imgs_compressed = masker.inverse_transform(X_compressed)
 import matplotlib.pyplot as plt
 plt.close('all')
 
-fig, axx = plt.subplots(2, 4)
+
+fig, axx = plt.subplots(2, 4, **{'figsize': (10, 5)})
 plt.gray()
 
 for i in range(4):
@@ -61,7 +62,5 @@ for i in range(4):
     axx[1, i].set_axis_off()
     axx[1, i].set_title('Compressed')
 
-
-plt.tight_layout()
+fig.savefig('figures/faces.png', bbox_to_inches='tight')
 plt.show()
-
