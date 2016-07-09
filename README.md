@@ -1,6 +1,6 @@
 # Recursive nearest agglomeration (ReNA)
 
-ReNA is a fast clustering for approximation of structured signals.
+ReNA is a fast clustering algorithm, mainly usef for the approximation of structured signals.
 
 
 ## Dependencies
