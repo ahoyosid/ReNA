@@ -39,7 +39,7 @@ from nilearn.input_data import NiftiMasker
 masker = NiftiMasker(mask_img=mask_img, standardize=False).fit()
 
 from rena import ReNA
-cluster = ReNA(scaling=True, n_clusters=100, masker=masker)
+cluster = ReNA(scaling=True, n_clusters=250, masker=masker)
 
 
 X_clustered = cluster.fit_transform(X)

@@ -18,6 +18,7 @@ ReNA is a fast clustering for approximation of structured signals.
 
 ### Clustering images of faces
 
+Compression of face images from the Olivetti Faces Dataset using 250 clusters.
 
 ```python
 python example_faces.py
