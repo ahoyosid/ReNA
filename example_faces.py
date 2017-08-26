@@ -1,66 +1,69 @@
+"""
+
+"""
+#==============================================================================
+# Loading the data
 import numpy as np
-import nibabel
-
-
-# Auxiliary functions to use ReNA:
-# ReNA is designed to use a NiftiMasker to define the connectivity graph
-def _unmask(w, mask):
-    if mask.sum() != len(w):
-        raise ValueError("Expecting mask.sum() == len(w).")
-    out = np.zeros(mask.shape, dtype=w.dtype)
-    out[mask] = w
-    return out
-
-
-def to_niimgs(X, dim):
-    p = np.prod(dim)
-    mask = np.zeros(p).astype(np.bool)
-    mask[:X.shape[-1]] = 1
-    mask = mask.reshape(dim)
-    X = np.rollaxis(np.array([_unmask(x, mask) for x in X]), 0, start=4)
-    affine = np.eye(4)
-    X_niimg = nibabel.Nifti1Image(X, affine)
-    mask_niimg = nibabel.Nifti1Image(mask.astype(np.float), affine)
-    return X_niimg, mask_niimg
-
-
 from sklearn.datasets import fetch_olivetti_faces
-from sklearn.utils import check_random_state
-rnd = check_random_state(23)
-dataset = fetch_olivetti_faces(shuffle=True, random_state=rnd)
+
+random_state = 32
+dataset = fetch_olivetti_faces(shuffle=True, random_state=random_state)
 
 X, y = dataset['data'], dataset['target']
-
 n_x, n_y = dataset['images'][0].shape
 
-X_img, mask_img = to_niimgs(X, [n_x, n_y, 1])
+X_data = X.reshape(-1, n_x, n_y).transpose(1, 2, 0)
+#==============================================================================
+# Get the connectivity
+from sklearn.feature_extraction.image import grid_to_graph
+from rena import weighted_connectivity_graph
 
-from nilearn.input_data import NiftiMasker
-masker = NiftiMasker(mask_img=mask_img, standardize=False).fit()
+connectivity_ward = grid_to_graph(n_x, n_y, 1)
 
-from rena import ReNA
-cluster = ReNA(scaling=True, n_clusters=250, masker=masker)
+mask = np.ones((n_x, n_y))
+connectivity_rena = weighted_connectivity_graph(X_data, n_features=X.shape[1],
+                                                mask=mask)
+#==============================================================================
+# Custering
+from sklearn.cluster import AgglomerativeClustering
+from rena import recursive_nearest_agglomeration
 
+n_clusters = 250
 
-X_clustered = cluster.fit_transform(X)
-X_compressed = cluster.inverse_transform(X_clustered)
+ward = AgglomerativeClustering(n_clusters=n_clusters,
+                               connectivity=connectivity_ward, linkage='ward')
 
-imgs_compressed = masker.inverse_transform(X_compressed)
+labels_rena = recursive_nearest_agglomeration(X, connectivity_rena,
+                                              n_clusters=n_clusters)
 
+ward.fit(X.T)
+labels_ward = ward.labels_
+#==============================================================================
+# Custering
+from rena import reduce_data, approximate_data
+
+X_red_rena = reduce_data(X, labels_rena)
+X_red_ward = reduce_data(X, labels_ward)
+
+X_approx_rena = approximate_data(X_red_rena, labels_rena)
+X_approx_ward = approximate_data(X_red_ward, labels_ward)
+#==============================================================================
+# Visualize
 import matplotlib.pyplot as plt
 plt.close('all')
 
+# X_approx_rena[].reshape(n_x, n_y)
 
-fig, axx = plt.subplots(2, 4, **{'figsize': (10, 5)})
-plt.gray()
+# # fig, axx = plt.subplots(2, 4, **{'figsize': (10, 5)})
+# # plt.gray()
 
-for i in range(4):
-    axx[0, i].imshow(masker.inverse_transform(X).get_data()[:, :, 0, i + 30])
-    axx[0, i].set_axis_off()
-    axx[0, i].set_title('Original')
-    axx[1, i].imshow(imgs_compressed.get_data()[:, :, 0, i + 30])
-    axx[1, i].set_axis_off()
-    axx[1, i].set_title('Compressed')
+# # for i in range(4):
+# #     axx[0, i].imshow(X_approx_rena.re, i + 30])
+# #     axx[0, i].set_axis_off()
+# #     axx[0, i].set_title('Original')
+# #     axx[1, i].imshow(imgs_compressed.get_data()[:, :, 0, i + 30])
+# #     axx[1, i].set_axis_off()
+# #     axx[1, i].set_title('Compressed')
 
-fig.savefig('figures/faces.png', bbox_to_inches='tight')
-plt.show()
+# # fig.savefig('figures/faces.png', bbox_to_inches='tight')
+# # plt.show()
