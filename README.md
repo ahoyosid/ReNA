@@ -36,6 +36,9 @@ Compression of a brain image (MRI) from the [Haxby2001](http://www.ncbi.nlm.nih.
 python examples_neuroimaging.py
 ```
 ![](figures/original.png)
-![](figures/compress.png)
-![Clusters found with ReNA](figures/clusters.png)
+![](figures/compress_ward.png)
+![](figures/compress_rena.png)
+![](figures/clusters_ward.png)
+![](figures/clusters_rena.png)
+
 
