@@ -52,18 +52,20 @@ X_approx_ward = approximate_data(X_red_ward, labels_ward)
 import matplotlib.pyplot as plt
 plt.close('all')
 
-# X_approx_rena[].reshape(n_x, n_y)
 
-# # fig, axx = plt.subplots(2, 4, **{'figsize': (10, 5)})
-# # plt.gray()
+fig, axx = plt.subplots(3, 4, **{'figsize': (10, 5)})
+plt.gray()
 
-# # for i in range(4):
-# #     axx[0, i].imshow(X_approx_rena.re, i + 30])
-# #     axx[0, i].set_axis_off()
-# #     axx[0, i].set_title('Original')
-# #     axx[1, i].imshow(imgs_compressed.get_data()[:, :, 0, i + 30])
-# #     axx[1, i].set_axis_off()
-# #     axx[1, i].set_title('Compressed')
+for i in range(4):
+    axx[0, i].imshow(X[i + 30].reshape(n_x, n_y))
+    axx[0, i].set_axis_off()
+    axx[0, 0].set_title('Original')
+    axx[1, i].imshow(X_approx_ward[i + 30].reshape(n_x, n_y))
+    axx[1, i].set_axis_off()
+    axx[1, 0].set_title('Ward: approximated')
+    axx[2, i].imshow(X_approx_rena[i + 30].reshape(n_x, n_y))
+    axx[2, i].set_axis_off()
+    axx[2, 0].set_title('ReNA: approximated')
 
-# # fig.savefig('figures/faces.png', bbox_to_inches='tight')
-# # plt.show()
+fig.savefig('figures/faces.png', bbox_to_inches='tight')
+plt.show()
