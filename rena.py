@@ -5,30 +5,39 @@ Author:
     Andres Hoyos idrobo, Gael Varoquaux, Jonas Kahn and  Bertrand Thirion
 """
 import numpy as np
+from sklearn.utils.validation import check_is_fitted
+from sklearn.externals.joblib import Parallel, delayed, Memory
+from sklearn.externals import six
 from scipy.sparse import csgraph, coo_matrix, dia_matrix
+from sklearn.base import BaseEstimator
+from sklearn.utils import check_array
 
 
-def _compute_weights(data):
+def _compute_weights(masker, data_matrix):
     """Measuring the Euclidean distance: computer the weights in the direction
     of each axis
 
     Note: Here we are assuming a square lattice (no diagonal connections)
     """
-    dims = len(data.shape)
+    # data_graph shape
+    dims = len(masker.mask_img_.shape)
+    data_graph = masker.inverse_transform(data_matrix).get_data()
     weights = []
+
     for axis in range(dims):
-        weights.append(np.sum(np.diff(data, axis=axis) ** 2, axis=-1).ravel())
+        weights.append(
+            np.sum(np.diff(data_graph, axis=axis) ** 2, axis=-1).ravel())
 
     return np.hstack(weights)
 
 
-def _compute_edges(data, is_mask=False):
+def _compute_edges(data_graph, is_mask=False):
     """
     """
-    dims = len(data.shape)
+    dims = len(data_graph.shape)
     edges = []
     for axis in range(dims):
-        vertices_axis = np.swapaxes(data, 0, axis)
+        vertices_axis = np.swapaxes(data_graph, 0, axis)
 
         if is_mask:
             edges.append(np.logical_and(
@@ -38,18 +47,19 @@ def _compute_edges(data, is_mask=False):
             edges.append(np.vstack(
                 [vertices_axis[:-1].swapaxes(axis, 0).ravel(),
                  vertices_axis[1:].swapaxes(axis, 0).ravel()]))
+    edges = np.hstack(edges)
+    return edges
 
-    return np.hstack(edges)
 
-
-def _create_ordered_edges(data, mask):
+def _create_ordered_edges(masker, data_matrix):
     """
     """
+    mask = masker.mask_img_.get_data()
     shape = mask.shape
     n_features = np.prod(shape)
 
     vertices = np.arange(n_features).reshape(shape)
-    weights = _compute_weights(data)
+    weights = _compute_weights(masker, data_matrix)
     edges = _compute_edges(vertices, is_mask=False)
     edges_mask = _compute_edges(mask, is_mask=True)
 
@@ -65,13 +75,18 @@ def _create_ordered_edges(data, mask):
     return edges, weights, edges_mask
 
 
-def weighted_connectivity_graph(data, n_features, mask):
+def weighted_connectivity_graph(masker, data_matrix):
     """ Creating weighted graph
+
     data and topology, encoded by a connectivity matrix
+
     """
-    edges, weight, edges_mask = _create_ordered_edges(data, mask=mask)
+    n_features = masker.mask_img_.get_data().sum()
+
+    edges, weight, edges_mask = _create_ordered_edges(masker, data_matrix)
     connectivity = coo_matrix(
         (weight, edges), (n_features, n_features)).tocsr()
+
     # Making it symmetrical
     connectivity = (connectivity + connectivity.T) / 2
 
@@ -108,7 +123,8 @@ def _nn_connectivity(connectivity, thr):
     return nn_connectivity
 
 
-def reduce_data_and_connectivity(labels, n_labels, connectivity, data, thr):
+def reduce_data_and_connectivity(labels, n_labels, connectivity, data_matrix,
+                                 thr):
     """
     """
     n_features = len(labels)
@@ -124,7 +140,7 @@ def reduce_data_and_connectivity(labels, n_labels, connectivity, data, thr):
     incidence = inv_sum_col * incidence
 
     # reduced data
-    reduced_data = (incidence * data.T).T
+    reduced_data_matrix = (incidence * data_matrix.T).T
     reduced_connectivity = (incidence * connectivity) * incidence.T
 
     reduced_connectivity = reduced_connectivity - dia_matrix(
@@ -132,11 +148,11 @@ def reduce_data_and_connectivity(labels, n_labels, connectivity, data, thr):
 
     i_idx, j_idx = reduced_connectivity.nonzero()
 
-    data = np.maximum(
-        thr, np.sum((reduced_data[:, i_idx] - reduced_data[:, j_idx]) ** 2, 0))
-    reduced_connectivity.data = data
+    data_matrix_ = np.maximum(thr, np.sum(
+        (reduced_data_matrix[:, i_idx] - reduced_data_matrix[:, j_idx]) ** 2, 0))
+    reduced_connectivity.data = data_matrix_
 
-    return reduced_connectivity, reduced_data
+    return reduced_connectivity, reduced_data_matrix
 
 
 def nearest_neighbor_grouping(connectivity, data_matrix, n_clusters, thr):
@@ -176,10 +192,13 @@ def nearest_neighbor_grouping(connectivity, data_matrix, n_clusters, thr):
     return reduced_connectivity, reduced_data_matrix, labels
 
 
-def recursive_nearest_agglomeration(data_matrix, connectivity, n_clusters,
-                                    n_iter=10, thr=1e-7):
+def recursive_nearest_agglomeration(masker, data_matrix, n_clusters, n_iter,
+                                    thr):
     """
     """
+    # Weighted connectivity matrix
+    connectivity = weighted_connectivity_graph(masker, data_matrix)
+
     # Initialization
     labels = np.arange(connectivity.shape[0])
     n_labels = connectivity.shape[0]
@@ -194,18 +213,134 @@ def recursive_nearest_agglomeration(data_matrix, connectivity, n_clusters,
         if n_labels <= n_clusters:
             break
 
-    return labels
+    return n_labels, labels
 
 
-def reduce_data(X, labels):
-    unique_labels = np.unique(labels)
-    nX = []
-    for l in unique_labels:
-        nX.append(np.mean(X[:, labels == l], axis=1))
-    return np.array(nX).T
+
+class ReNA(BaseEstimator):
+    """
+    ReNA is useful.
+
+    Parameters
+    ----------
+    masker: dd
+
+    n_cluster: int, optional (default 2)
+        Number of clusters.
+
+    connectivity
+
+    scaling: bool, optional (default False)
+
+    memory: instance of joblib.Memory or string
+        Used to cache the masking process.
+        By default, no caching is done. If a string is given, it is the
+        path to the caching directory.
+
+    n_iter: int, optional (default 10)
+        Number of iterations of the recursive nearest agglomeration
+
+    n_jobs: int, optional (default 1)
+        Number of jobs in solving the sub-problems.
+
+    thr: float in the opened interval (0., 1.), optional (default 1e-7)
+        Threshold used to deal with eccentricities.
+
+    Attributes
+    ----------
+    `labels_`: numpy array
+
+    `n_clusters_`: int
+        Number of clusters
+
+    `sizes_`: numpy array
+        It contains the size of each cluster
+
+    """
+    def __init__(self, n_clusters=2, connectivity=None, masker=None, memory=None,
+                 scaling=False, n_iter=10, thr=1e-7, n_jobs=1):
+        self.n_clusters = n_clusters
+        self.connectivity = connectivity
+        self.memory = memory
+        self.scaling = scaling
+        self.n_iter = n_iter
+        self.n_jobs = n_jobs
+        self.masker = masker
+        self.thr = thr
+
+    def fit(self, X):
+        """Compute clustering of the data
+
+        Parameters
+        ----------
+        X : 2D array
+        """
+
+        X = check_array(X, ensure_min_features=2)
+
+        memory = self.memory
+        if isinstance(memory, six.string_types):
+            memory = Memory(cachedir=memory, verbose=0)
+
+        if self.n_clusters <= 0:
+            raise ValueError("n_clusters should be an integer greater than 0."
+                             " %s was provided." % str(self.n_clusters))
+
+        n_labels, labels = recursive_nearest_agglomeration(
+            self.masker, X, self.n_clusters, n_iter=self.n_iter, thr=self.thr)
+
+        sizes = np.bincount(labels)
+        sizes = sizes[sizes > 0]
+
+        self.labels_ = labels
+        self.n_clusters_ = np.unique(self.labels_).shape[0]
+        self.sizes_ = sizes
+        self.n_features = X.shape[1]
+        
+        return self
 
 
-def approximate_data(X, labels):
-    _, inverse = np.unique(labels, return_inverse=True)
-    return X[..., inverse]
+    def transform(self, X):
+        """Apply clustering, reduce the dimensionality of the data
 
+        Parameters
+        ----------
+        X: 2D array
+        """
+        N = X.shape[0]
+        check_is_fitted(self, 'labels_')
+        #unique_labels = np.unique(self.labels_)
+
+#         nX = []
+#         for l in unique_labels:
+#             nX.append(np.mean(X[:, self.labels_ == l], axis=1))
+#         Xred =  np.array(nX).T
+        Xred = np.array([np.bincount(self.labels_, X[i,:])/np.bincount(self.labels_) for i in range(N)])
+
+        if self.scaling:
+            Xred = Xred * np.sqrt(self.sizes_)
+
+        return Xred
+    
+#     def generate_phi(self)
+#         phi_T = cluster.transform( np.eye(self.n_features))
+#         phi = phi_T.T # do sparse
+#         self.phi = phi
+#         return self
+
+    def fit_transform(self, X):
+        """Fit to data, then perform the clustering (transformation)
+        """
+        self.fit(X)
+        return self.transform(X)
+
+    def inverse_transform(self, Xred):
+        """
+        """
+        check_is_fitted(self, 'labels_')
+
+        _, inverse = np.unique(self.labels_, return_inverse=True)
+
+        if self.scaling:
+            Xred = Xred / np.sqrt(self.sizes_)
+        return Xred[..., inverse]
