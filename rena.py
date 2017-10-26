@@ -315,7 +315,7 @@ class ReNA(BaseEstimator):
 #         for l in unique_labels:
 #             nX.append(np.mean(X[:, self.labels_ == l], axis=1))
 #         Xred =  np.array(nX).T
-        Xred = np.array([np.bincount(self.labels_, X[i,:])/np.bincount(self.labels_) for i in range(N)])
+        Xred = np.array([np.bincount(self.labels_, X[i,:])/self.sizes_ for i in range(N)])
 
         if self.scaling:
             Xred = Xred * np.sqrt(self.sizes_)
