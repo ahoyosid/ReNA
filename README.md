@@ -1,5 +1,16 @@
 # Recursive nearest agglomeration (ReNA)
 
+
+
+## Nilearn contains the latest version of ReNA:
+https://nilearn.github.io/modules/generated/nilearn.regions.Parcellations.html#nilearn.regions.Parcellations
+
+
+## TODO: This example is not currently working, please use the Nilearn implementation
+
+
+
+
 ReNA is a fast clustering algorithm, mainly usef for the approximation of structured signals.
 
 
