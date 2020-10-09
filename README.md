@@ -6,7 +6,7 @@
 https://nilearn.github.io/modules/generated/nilearn.regions.Parcellations.html#nilearn.regions.Parcellations
 
 
-## TODO: This example is not currently working, please use the Nilearn implementation
+## XXX: This example is not currently working, please use the Nilearn implementation
 
 
 
